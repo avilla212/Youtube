@@ -1,0 +1,20 @@
+FROM node:18
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y ffmpeg
+
+# copy package json into working directory
+COPY package*.json ./
+
+# install dependencies
+RUN npm install
+
+# copy all files from current directory to working directory
+COPY . .
+
+# expose port 3000
+EXPOSE 3000
+
+# Define the command to run your app using CMD (only one CMD allowed)
+CMD [ "npm", "start" ]

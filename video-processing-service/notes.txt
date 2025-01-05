@@ -1,0 +1,65 @@
+Overview:
+- cloud storage will store the raw and processed videos uploaded by users
+- pub/sub will send messages to the video processing service 
+- cloud run will host a non public service. After it transcodes the videos, they will be uploaded to cloud storage
+
+- cloud firestore will store the metadata for the videos
+- next js app will serve as the youtube web client, make it api calls to firebase functions
+- the firebase functions will fetch videos from firestore and return them
+
+Converting videos hosted on GCS:
+- We will process videos after they are uploaded by users
+
+    General flow:
+    1: video gets uploaded by user 
+    2: video-processing-service will be notified by cloud pub/sub
+    3: vps will download the video from GCS
+    4: vps will process the video
+    5: vps will upload the processed video to GCS
+
+Deploy video processing service to google cloud:
+    - yt-clone ID: 
+    
+    Take our docker image and push it into the cloud:
+        - enable a service called artifact registry
+
+Cloud run: 
+    - fully managed compute enviornmeent to deploy and scale containerized applications
+
+    - our container deploys and scaled to cloud run which athen gets sent to the client
+    - we would use cloud run over cloud functions when:
+        - languages are not supported in cloud functions
+        - larger restest timeouts 
+        - larger volume
+
+        How does it work:
+        - our website, rest api  backend get pusehd to cloud run
+        - data processing and worklfow get put into a new file which is then pushed into cloud run
+        - then cloud run can store the data 
+
+    Creating an artifact registry using the cli:
+        - gcloud artifacts repositories create <insert repo name> \ 
+        -- repository-format= <insert> \
+        -- location= <insert> \
+        -- description = "Insert description"
+    
+    Pushing our docker image to the artifact repo:
+        - docker build -t us-central1-docker.pkg.dev/ <project name>-<project id>/<repo that we are pushign to>/<docker image name> . 
+        - we add the dot because we are in the directory where the docker file is
+        - dont forget to configure docker so we can push the docker image
+            - gcloud auth configure-docker us-central1-docker.pkg.dev
+        
+        - we can use docker images to find our newly created image
+            - we then copy the long tag "us-central1-docker.pkg.dev/yt-clone-4abee/video-processing-repo/video-processing-service"
+            - we take that and put it into docker push us-central1-docker.pkg.dev/yt-clone-4abee/video-processing-repo/video-processing-service 
+                - tells us where we are pushing this image
+    Enable cloud run through cli or UI:
+        - gcloud services enable run.googleapis.compute
+        - gcloud run deploy <service name> --image <region>-docker.pkg.dev/<projectID>/<artifact name>/<service name> \
+    
+    Enabling through UI:
+        - request based autoscaling:
+            - we set the minimum to 0. if our service is not getting any requests then it will autoscale back to 0 and we wont get billed
+        - Ingress control:
+            - important for security purposes, we set it to internal because we dont want just anyone using our service.
+            - we keep it private so only google services can access 

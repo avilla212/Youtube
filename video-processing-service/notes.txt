@@ -63,3 +63,15 @@ Cloud run:
         - Ingress control:
             - important for security purposes, we set it to internal because we dont want just anyone using our service.
             - we keep it private so only google services can access 
+
+Pub/Sub:
+    - message queue service
+    How its gonna work:
+        - when we upload to our cloud bucket, pub/sub will receive and send a notif to cloud run
+        - we can push that notification through a post request 
+    Subscription:
+        - is a resource thats created for a topic
+        - we need TOPICS and SUBSCRIPTIONS because for one topic you can have many subscriptions
+        and we could send messages to multiple services
+
+        - Acknowledge deadline allows us to retry if our message doesnt work

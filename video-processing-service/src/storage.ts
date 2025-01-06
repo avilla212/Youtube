@@ -1,132 +1,136 @@
+import { Storage } from "@google-cloud/storage";
+import fs from "fs";
+import ffmpeg from "fluent-ffmpeg";
 
-
-import { Storage } from '@google-cloud/storage';
-import fs from 'fs';
-import ffmpeg from 'fluent-ffmpeg';
-import e from 'express';
-import { resolve } from 'path';
-
-// create instance of google cloud storage
+// GCS instance
 const storage = new Storage();
 
-// bucket names have to be globally unique
-const rawVideoBucketName = 'a-villa-raw-videos';
-const processedVideoBucketName = 'a-villa-processed-videos';
+const rawVideoBucketName = "avilla-raw-videos";
+const processedVideoBucketName = "avilla-processed-videos";
 
-// local paths
-const localRawVideoPath = './raw-videos';
-const localProcessedVideoPath = './processed-videos';
-
-/*
-    setupDirectorries to create local directories in the docker container for the raw and processed videos
-*/
-export function setupDirectories(){
-    ensureDirectoryExists(localRawVideoPath);
-    ensureDirectoryExists(localProcessedVideoPath);
-}
-
-/*
-    * @param rawVideoName: string - name of the file to convert from @link localRawVideoPath
-    * @param processedVideoName: string - name of the file to convert to @link localProcessedVideoPath
-    * @returns A promise that resolves to the path of the processed video
-*/
-export function convertVideo(rawVideoName: string, processedVideoName: string) : Promise<void>{
-    return new Promise((resolve: any, reject: any) => {
-        ffmpeg(`${localRawVideoPath}/${rawVideoName}`)
-        .outputOptions("-vf", "scale=-1:360") // convert to 360p
-        .on("end", function () {
-            console.log("Processing finished !");
-            resolve();
-        })
-        .on("error", function (err: any) {
-            console.log(`Error processing video: ${err.message}`);
-            reject(err);
-        })
-        .save(`${localProcessedVideoPath}/${processedVideoName}`);
-    });
-}
-
-/*
-* @param fileName: string - name of the file to upload to the bucket
-* @link localProcessedVideoPath -> @link processedVideoBucketName   
-* @returns A promise that resolves to the path of the uploaded video
-*/
-export async function downloadRawVideo(fileName: string) {
-    // awwait will block any code after this line until it is completed
-    await storage.bucket(rawVideoBucketName)
-        .file(fileName)
-        .download({
-            destination: `${localRawVideoPath}/${fileName}`
-        })
-    console.log(`gs://${rawVideoBucketName}/${fileName} downloaded to ${localRawVideoPath}/${fileName}`);
-}
-
+const localRawVideoPath = "./raw-videos";
+const localProcessedVideoPath = "./processed-videos";
 
 /**
- * @param fileName - The name of the file to upload from the 
- * {@link localProcessedVideoPath} folder into the {@link processedVideoBucketName}.
- * @returns A promise that resolves when the file has been uploaded.
+ * Creates the local directories for raw and processed videos
+ */
+export function setupDirectories() {
+  ensureDirectoryExistence(localRawVideoPath);
+  ensureDirectoryExistence(localProcessedVideoPath);
+}
+
+/**
+ * @param rawVideoName - The name of the file to convert from (@link localRawVideoPath)
+ * @param processedVideoName - The name of the file to convert to (@link localProcessedVideoPath)
+ * @returns A promise that resolves when the video is converted
+ */
+export function convertVideo(rawVideoName: string, processedVideoName: string) {
+  return new Promise<void>((resolve, reject) => {
+    ffmpeg(`${localRawVideoPath}/${rawVideoName}`)
+      .outputOptions("-vf", "scale=-1:360") // 360p
+      .on("end", function () {
+        console.log("Processing finished successfully");
+        resolve();
+      })
+      .on("error", function (err: any) {
+        console.log("An error occurred: " + err.message);
+        reject(err);
+      })
+      .save(`${localProcessedVideoPath}/${processedVideoName}`);
+  });
+}
+
+/**
+ * @param fileName - The name of the file to download from the
+ * (@link rawVideoBucketName) bucket into the (@link localRawVideoPath) directory
+ * @returns A promise that resolves when the video is downloaded
+ */
+export async function downloadRawVideo(fileName: string) {
+  await storage.bucket(rawVideoBucketName)
+    .file(fileName)
+    .download({
+      destination: `${localRawVideoPath}/${fileName}`,
+    });
+
+  console.log(
+    `gs://${rawVideoBucketName}/${fileName} downloaded to 
+    // ${localRawVideoPath}/${fileName}`
+  );
+}
+
+/**
+ * @param fileName - the name of the file to upload from the
+ * (@link localProcessedVideoPath) directory to the (@link processedVideoBucketName) bucket
+ * @returns A promise that resolves when the video is uploaded
  */
 
 export async function uploadProcessedVideo(fileName: string) {
-    // Declared bucket since we are going to use it multiple times
-    const bucket = storage.bucket(processedVideoBucketName);
+  // Upload the video to the bucket
+  const bucket = storage.bucket(processedVideoBucketName);
 
-    // Upload the file
-    await bucket.upload(`${localProcessedVideoPath}/${fileName}`, {
-        destination: fileName
+  // await because we need to wait for the upload to finish
+  await storage.bucket(processedVideoBucketName)
+    .upload(`${localProcessedVideoPath}/${fileName}`, {
+      destination: fileName,
     });
 
-    // Make the file public since we are sharing videos
-    await bucket.file(fileName).makePublic();
+  console.log(
+    `${localProcessedVideoPath}/${fileName} uploaded to 
+        gs://${processedVideoBucketName}/${fileName}`
+  );
 
-    console.log(`gs://${processedVideoBucketName}/${fileName} uploaded to ${localProcessedVideoPath}/${fileName}`);
+  // await because we need to wait for the file to be made public before we can access it
+  await bucket.file(fileName).makePublic();
 }
 
 /**
- * 
- * @param fileName - The name of the file to delete from the 
- * {@link localProcessedVideoPath} folder.
- * @returns A promise that resolves when the file has been deleted.
+ * @param fileName - The name of the file to delete from the (@link rawVideoBucketName) bucket
+ * @returns A promise that resolves when the video is deleted
  */
-export function deleteProcessedVideo(fileName: string) : Promise<void> {
-    return deleteRawVideo(`${localProcessedVideoPath}/${fileName}`);
+export function deleteRawVideo(fileName: string) {
+  return deleteFile(`${localRawVideoPath}/${fileName}`);
 }
 
 /**
- * @param fileName - The name of the file to delete from the
- * {@link localRawVideoPath} folder.
- * @returns A promise that resolves when the file has been deleted.
- * 
+ * @param fileName - The name of the file to delete form the
+ * (@link localProcessedVideoPath) directory
+ * @returns A promise that resolves when the video is deleted
+ */
+export function deleteProcessedVideo(fileName: string) {
+  return deleteFile(`${localProcessedVideoPath}/${fileName}`);
+}
+
+/**
+ * @param filePath - The path of the file to delete
+ * @returns A promise that resolves when the file is deleted
  */
 
-export function deleteRawVideo(filePath: string) : Promise<void> {
-    return new Promise((resolve: any, reject: any) => {
-        if (fs.existsSync(filePath)){
-            fs.unlink(filePath, (err: any) => {
-                if (err){
-                    console.log(`Error deleting file: ${err.message}`);
-                    reject(err);
-                } else {
-                    console.log(`Deleted file: ${filePath}`);
-                    resolve();
-                }
-            })
-        } else { 
-            console.log(`File does not exist: ${filePath}`);
-            resolve();
+function deleteFile(filePath: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (fs.existsSync(filePath)) {
+      fs.unlink(filePath, (err) => {
+        if (err) {
+          console.error(`Failed to delete file at ${filePath}`, err);
+          reject(err);
+        } else {
+          console.log(`File deleted at ${filePath}`);
+          resolve();
         }
-    })
+      });
+    } else {
+      console.log(`File not found at ${filePath}, skipping delete.`);
+      resolve();
+    }
+  });
 }
 
 /**
- * Ensures a directory exists, creating it if necessary.
- * @param {string} dirPath - The directory path to check.
- */
-
-function ensureDirectoryExists(dirPath: string): void {
+ * Ensures a directory exists 
+ * @param (string) directoryPath - The path of the directory to ensure exists
+*/
+function ensureDirectoryExistence(dirPath: string) {
     if (!fs.existsSync(dirPath)) {
-        fs.mkdirSync(dirPath, { recursive: true }); // recursive: true creates nested directories 
-        console.log(`Directory created: ${dirPath}`);
+        fs.mkdirSync(dirPath, { recursive: true }); // recursice: true enables creating nested directories
     }
+    console.log(`Directory created at ${dirPath}`);
 }

@@ -1,66 +1,67 @@
 import express from 'express';
 
-import {
+import { 
   uploadProcessedVideo,
   downloadRawVideo,
   deleteRawVideo,
   deleteProcessedVideo,
-  convertVideo, 
+  convertVideo,
   setupDirectories
 } from './storage';
 
-const app: express.Application = express();
+// Create the local directories for videos
+setupDirectories();
+
+const app = express();
 app.use(express.json());
 
-app.post('./process-video', async (req: any, res: any) => {
-  // 
-  let data;
+// Process a video file from Cloud Storage into 360p
+app.post('/process-video', async (req:any, res:any) => {
 
+  // Get the bucket and filename from the Cloud Pub/Sub message
+  let data;
   try {
-    const message = Buffer.from(req.body.message.data, 'base64').toString('utf-8');
+    // Found in the documention for the Cloud Pub/Sub message
+    const message = Buffer.from(req.body.message.data, 'base64').toString('utf8');
     data = JSON.parse(message);
     if (!data.name) {
-      throw new Error('Invalid data: name is required');
+      throw new Error('Invalid message payload received.');
     }
   } catch (error) {
-    console.error('Invalid data', error);
-    return res.status(400).send('Invalid data');
+    console.error(error);
+    return res.status(400).send('Bad Request: missing filename.');
   }
 
   const inputFileName = data.name;
-  const outputFileName = inputFileName.replace('.mp4', '-360p.mp4');
+  const outputFileName = `processed-${inputFileName}`;
 
-  // Download the raw video from gcs
-  await downloadRawVideo(inputFileName)
+  // Download the raw video from Cloud Storage
+  await downloadRawVideo(inputFileName);
 
-  // Convert the video to 360p
-  try {
-    await convertVideo(inputFileName, outputFileName);
-
-  } catch (error) {
-    // If an error occurs, delete the raw and processed videos
-    // Promisee.all is used to run the deleteRawVideo and deleteProcessedVideo functions concurrently
+  // Process the video into 360p
+  try { 
+    await convertVideo(inputFileName, outputFileName)
+  } catch (err) {
+    // Promise.all will run all promises in parallel
     await Promise.all([
       deleteRawVideo(inputFileName),
       deleteProcessedVideo(outputFileName)
-    ])
-    console.error('Error processing video', error);
-    return res.status(500).send('Error processing video');
-  } 
-
-  // Upload the processed video to gcs
+    ]);
+    return res.status(500).send('Processing failed');
+  }
+  
+  // Upload the processed video to Cloud Storage
   await uploadProcessedVideo(outputFileName);
 
-  // Delete the raw and processed videos
   await Promise.all([
     deleteRawVideo(inputFileName),
     deleteProcessedVideo(outputFileName)
-  ])
+  ]);
 
-  return res.status(200).send('Video processed successfully');
-})
+  return res.status(200).send('Processing finished successfully');
+});
 
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
-  console.log(`App listening on port ${port}`);
-})
+    console.log(`Server is running on port ${port}`);
+});
